@@ -1,6 +1,5 @@
 package com.mrwhoknows.data.repo
 
-import com.mongodb.client.model.UpdateOptions
 import com.mrwhoknows.data.model.ShortUrl
 import org.litote.kmongo.coroutine.CoroutineCollection
 import org.litote.kmongo.eq
