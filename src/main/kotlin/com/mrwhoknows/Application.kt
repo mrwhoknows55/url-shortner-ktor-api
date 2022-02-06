@@ -13,7 +13,9 @@ fun main() {
     // TODO: create constants and env vars
     val shortUrlConnection = KMongo.createClient().coroutine.getDatabase("short-url").getCollection<ShortUrl>()
     val repository: ShortUrlRepo = ShortUrlRepoImpl(shortUrlConnection)
-    embeddedServer(Netty, port = 8080, host = "0.0.0.0") {
+    val port = System.getenv("PORT").toInt()
+    val PORT = if (port < 0) 80 else port
+    embeddedServer(Netty, port = PORT, host = "0.0.0.0") {
         // TODO: introduce DI
         configureRoutes(repository)
     }.start(wait = true)
