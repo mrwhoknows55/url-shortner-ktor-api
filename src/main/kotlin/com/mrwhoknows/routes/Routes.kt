@@ -9,6 +9,7 @@ import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import java.net.URLEncoder
 
 fun Application.configureRoutes(repository: ShortUrlRepo) {
 
@@ -24,22 +25,21 @@ fun Application.configureRoutes(repository: ShortUrlRepo) {
         get("/{shortUrl}") {
             val shortUrl = call.parameters["shortUrl"]
             if (!shortUrl.isNullOrBlank()) {
-                try {
-                    val result = repository.getShortUrlByShortUrl(shortUrl)
-                    result?.shortUrl?.let {
-                        result.increaseVisitCount()
-                        val update = repository.updateShortUrl(result.id, result)
-                        update?.let {
-                            call.respondRedirect(it.longUrl, permanent = false)
-                        } ?: kotlin.run {
-                            throw Exception("Something went wrong")
-                        }
-                    } ?: kotlin.run {
-                        throw Exception("Something went wrong")
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    call.respond(Pair("error", e.cause))
+                val result = repository.getShortUrl(shortUrl)
+                result?.shortUrl?.let {
+                    result.increaseVisitCount()
+                    val isUpdated = repository.updateShortUrl(result.id, result)
+                    if (isUpdated) call.respondRedirect(result.longUrl, permanent = false)
+                    else call.respond(
+                        status = HttpStatusCode.InternalServerError,
+                        Pair("result", "Something went wrong")
+                    )
+                    return@get
+                } ?: kotlin.run {
+                    call.respond(
+                        status = HttpStatusCode.InternalServerError, Pair("result", "Something went wrong")
+                    )
+                    return@get
                 }
             } else {
                 call.respond(status = HttpStatusCode.NotFound, "ShortUrl doesn't exists")
@@ -47,46 +47,121 @@ fun Application.configureRoutes(repository: ShortUrlRepo) {
         }
 
         route("/api/v1/") {
+            shortUrlRoute("short-url", repository)
+        }
+    }
+}
 
-            post("/short-url") {
+fun Route.shortUrlRoute(path: String, repository: ShortUrlRepo) {
+    route(path) {
+
+        post {
+            val body = call.receive<ShortUrl>()
+            val isAlreadyPresent = repository.doesShortUrlExists(body.shortUrl)
+
+            if (isAlreadyPresent) {
+                call.respond(Pair("result", "failed, short_url already present, please try another one"))
+                return@post
+            }
+            val isCreated = repository.createShortUrl(body)
+            if (isCreated) {
+                val inserted = repository.getShortUrl(body.shortUrl)
+                call.respond(inserted ?: Pair("result", "failed"))
+            } else {
+                call.respond(Pair("result", "failed"))
+            }
+        }
+
+        get {
+            try {
+                val shortUrls = repository.getShortUrls()
+                call.respond(shortUrls)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // TODO: Error and edge case handling
+    route("$path/id/{id}") {
+
+        get {
+            val id = call.parameters["id"]?.toInt()
+            if (id != null) {
+                val result = repository.getShortUrl(id)
+                result?.let {
+                    call.respond(it)
+                } ?: kotlin.run {
+                    call.respond(Pair("result", "Something went wrong"))
+                }
+            } else {
+                call.respond(status = HttpStatusCode.NotFound, "ShortUrl doesn't exists")
+            }
+        }
+
+        delete {
+            val id = call.parameters["id"]?.toInt()
+            if (id != null) {
+                val result = repository.deleteShortUrl(id)
+                call.respond(Pair("result", result))
+            } else {
+                call.respond(status = HttpStatusCode.NotFound, "ShortUrl doesn't exists")
+            }
+        }
+
+        put {
+            val id = call.parameters["id"]?.toInt()
+            if (id != null) {
                 val body = call.receive<ShortUrl>()
-                val isAlreadyPresent = repository.doesShortUrlExists(body.shortUrl)
-
-                if (isAlreadyPresent) {
-                    call.respond(Pair("result", "failed, short_url already present, please try another one"))
-                    return@post
+                val isUpdated = repository.updateShortUrl(id, body)
+                if (isUpdated) {
+                    call.respond(Pair("result", "updated successfully"))
+                    return@put
                 }
-                val isCreated = repository.createShortUrl(body)
-                if (isCreated) {
-                    val inserted = repository.getShortUrlByShortUrl(body.shortUrl)
-                    call.respond(inserted ?: Pair("result", "failed"))
-                } else {
-                    call.respond(Pair("result", "failed"))
-                }
+                call.respond(HttpStatusCode.ExpectationFailed, Pair("result", "update not successful"))
+                return@put
             }
+            call.respond(status = HttpStatusCode.NotFound, "ShortUrl doesn't exists")
+        }
+    }
 
-            get("/short-url") {
-                try {
-                    val shortUrls = repository.getShortUrls()
-                    call.respond(shortUrls)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
+    // TODO: Error and edge case handling
+    route("$path/short-url/{short-url}") {
 
-            get("/short-url/{id}") {
-                val id = call.parameters["id"]?.toInt()
-                if (id != null) {
-                    val result = repository.getShortUrlById(id)
-                    result?.let {
-                        call.respond(it)
-                    } ?: kotlin.run {
-                        call.respond(Pair("result", "Something went wrong"))
-                    }
-                } else {
-                    call.respond(status = HttpStatusCode.NotFound, "ShortUrl doesn't exists")
-                }
+        get {
+            val shortUrl = call.parameters["short-url"] ?: kotlin.run {
+                call.respond(status = HttpStatusCode.BadRequest, Pair("result", "Wrong short url"))
+                return@get
             }
+            val result = repository.getShortUrl(shortUrl)
+            result?.let {
+                call.respond(it)
+            } ?: kotlin.run {
+                call.respond(Pair("result", "Something went wrong"))
+            }
+        }
+
+        delete {
+            val shortUrl = call.parameters["short-url"] ?: kotlin.run {
+                call.respond(status = HttpStatusCode.BadRequest, Pair("result", "Wrong short url"))
+                return@delete
+            }
+            val result = repository.deleteShortUrl(shortUrl)
+            call.respond(Pair("result", result))
+        }
+
+        put {
+            val shortUrl = call.parameters["short-url"] ?: kotlin.run {
+                call.respond(status = HttpStatusCode.BadRequest, Pair("result", "Wrong short url"))
+                return@put
+            }
+            val body = call.receive<ShortUrl>()
+            val isUpdated = repository.updateShortUrl(shortUrl, body)
+            if (isUpdated) {
+                call.respond(Pair("result", "updated successfully"))
+                return@put
+            }
+            call.respond(HttpStatusCode.ExpectationFailed, Pair("result", "update not successful"))
         }
     }
 }
