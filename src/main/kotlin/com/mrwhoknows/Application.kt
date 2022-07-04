@@ -4,10 +4,12 @@ import ch.qos.logback.classic.Logger
 import com.mrwhoknows.config.AppConfig
 import com.mrwhoknows.config.setupConfig
 import com.mrwhoknows.di.appModule
+import com.mrwhoknows.feature.short_url.resource.shortUrlEndpoint
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.plugins.callloging.*
 import io.ktor.server.plugins.contentnegotiation.*
+import io.ktor.server.resources.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import org.koin.ktor.ext.inject
@@ -38,7 +40,10 @@ fun Application.module() {
 
     install(CallLogging)
 
+    install(Resources)
+
     routing {
+        shortUrlEndpoint()
         get("/") {
             call.respondText("Yes! Your API is working fine \uD83D\uDE80")
         }
