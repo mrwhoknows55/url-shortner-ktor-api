@@ -1,1 +1,1 @@
-rootProject.name = "url-shortner"
+rootProject.name = "url-shortner-ktor-api"
